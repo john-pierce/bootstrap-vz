@@ -1,5 +1,6 @@
 from bootstrapvz.base.fs.volume import Volume
 from bootstrapvz.base.fs.exceptions import VolumeError
+from ..common.tools import log_check_call
 
 
 class EBSVolume(Volume):
@@ -34,7 +35,6 @@ class EBSVolume(Volume):
 
     def _before_attach(self, e):
         import string
-        import subprocess
         import urllib2
 
         def name_mapped(path):
@@ -74,7 +74,7 @@ class EBSVolume(Volume):
 
         lsblk_command = ['lsblk', '--noheadings', '--list', '--nodeps', '--output', 'NAME']
 
-        lsblk_start = subprocess.check_output(lsblk_command)
+        lsblk_start = log_check_call(lsblk_command)
         start_dev_names = set(lsblk_start.split())
 
         self.conn.attach_volume(VolumeId=self.vol_id,
@@ -84,18 +84,18 @@ class EBSVolume(Volume):
         waiter.wait(VolumeIds=[self.vol_id],
                     Filters=[{'Name': 'attachment.status', 'Values': ['attached']}])
 
-        subprocess.check_call(['udevadm', 'settle'])
+        log_check_call(['udevadm', 'settle'])
 
-        lsblk_end = subprocess.check_output(lsblk_command)
+        lsblk_end = log_check_call(lsblk_command)
         end_dev_names = set(lsblk_end.split())
 
         if len(start_dev_names ^ end_dev_names) != 1:
             raise VolumeError('Could not determine the device name for bootstrap volume')
 
         udev_name = (start_dev_names ^ end_dev_names).pop()
-        self.device_path = subprocess.check_output(['udevadm', 'info',
-                                                    '--root', '--query=name',
-                                                    '--name', udev_name]).strip()
+        self.device_path = log_check_call(['udevadm', 'info',
+                                           '--root', '--query=name',
+                                           '--name', udev_name]).strip()
 
     def _before_detach(self, e):
         self.conn.detach_volume(VolumeId=self.vol_id,
