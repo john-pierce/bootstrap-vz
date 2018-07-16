@@ -1,6 +1,6 @@
 from bootstrapvz.base.fs.volume import Volume
 from bootstrapvz.base.fs.exceptions import VolumeError
-from ..common.tools import log_check_call
+from bootstrapvz.common.tools import log_check_call
 
 
 class EBSVolume(Volume):
@@ -34,6 +34,7 @@ class EBSVolume(Volume):
         self.fsm.attach(instance_id=instance_id)
 
     def _before_attach(self, e):
+        import os
         import string
         import urllib2
 
@@ -75,7 +76,7 @@ class EBSVolume(Volume):
         lsblk_command = ['lsblk', '--noheadings', '--list', '--nodeps', '--output', 'NAME']
 
         lsblk_start = log_check_call(lsblk_command)
-        start_dev_names = set(lsblk_start.split())
+        start_dev_names = set(lsblk_start)
 
         self.conn.attach_volume(VolumeId=self.vol_id,
                                 InstanceId=self.instance_id,
@@ -87,15 +88,19 @@ class EBSVolume(Volume):
         log_check_call(['udevadm', 'settle'])
 
         lsblk_end = log_check_call(lsblk_command)
-        end_dev_names = set(lsblk_end.split())
+        end_dev_names = set(lsblk_end)
 
         if len(start_dev_names ^ end_dev_names) != 1:
             raise VolumeError('Could not determine the device name for bootstrap volume')
 
         udev_name = (start_dev_names ^ end_dev_names).pop()
-        self.device_path = log_check_call(['udevadm', 'info',
-                                           '--root', '--query=name',
-                                           '--name', udev_name]).strip()
+        udev_path = log_check_call(['udevadm', 'info',
+                                    '--root', '--query=name', '--name',
+                                    udev_name])
+        if len(udev_path) != 1 or not os.path.exists(udev_path[0]):
+            raise VolumeError('Could not find device path for bootstrap volume')
+
+        self.device_path = udev_path[0]
 
     def _before_detach(self, e):
         self.conn.detach_volume(VolumeId=self.vol_id,
